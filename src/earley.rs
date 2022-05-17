@@ -213,7 +213,7 @@ where
     complete_derivations: Vec<ChartEdge<N, T>>,
 
     /// Entire chart in order (mainly just for printing it out),
-    /// the second item in the pair is the history in the form indices
+    /// the second item in the pair is the history in the form of indices
     /// back into this `Vec`, as this is easier to print in a table.
     /// This will only be populated if trace is true
     trace_chart: Vec<(ChartEdge<N, T>, Vec<usize>)>,
