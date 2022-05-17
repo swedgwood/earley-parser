@@ -14,18 +14,18 @@ pub trait Nonterminal: Clone + Copy + Eq + Hash {
 }
 
 #[derive(Clone, Eq, Hash, PartialEq)]
-pub enum Symbol<NT, T>
+pub enum Symbol<N, T>
 where
-    NT: Nonterminal,
+    N: Nonterminal,
     T: Terminal,
 {
-    Nonterminal(NT),
+    Nonterminal(N),
     Terminal(T),
 }
 
-impl<NT, T> Display for Symbol<NT, T>
+impl<N, T> Display for Symbol<N, T>
 where
-    NT: Nonterminal + Display,
+    N: Nonterminal + Display,
     T: Terminal + Display,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -37,24 +37,24 @@ where
 }
 
 #[derive(Clone, Eq, Hash, PartialEq)]
-pub struct Production<NT, T>
+pub struct Production<N, T>
 where
-    NT: Nonterminal,
+    N: Nonterminal,
     T: Terminal,
 {
-    lhs: NT,
-    rhs: Vec<Symbol<NT, T>>,
+    lhs: N,
+    rhs: Vec<Symbol<N, T>>,
 }
 
-impl<NT, T> Production<NT, T>
+impl<N, T> Production<N, T>
 where
-    NT: Nonterminal,
+    N: Nonterminal,
     T: Terminal,
 {
-    pub fn new(lhs: NT, rhs: Vec<Symbol<NT, T>>) -> Self {
+    pub fn new(lhs: N, rhs: Vec<Symbol<N, T>>) -> Self {
         Self { lhs, rhs }
     }
-    fn into_dotted_rule(self, dot_pos: usize) -> DottedRule<NT, T> {
+    fn into_dotted_rule(self, dot_pos: usize) -> DottedRule<N, T> {
         if dot_pos > self.rhs.len() {
             panic!(
                 "Attempted to create dotted rule with dot_pos={}, but rhs.len()={}",
@@ -69,31 +69,31 @@ where
         }
     }
 
-    pub fn lhs(&self) -> &NT {
+    pub fn lhs(&self) -> &N {
         &self.lhs
     }
 
-    pub fn rhs(&self) -> &Vec<Symbol<NT, T>> {
+    pub fn rhs(&self) -> &Vec<Symbol<N, T>> {
         &self.rhs
     }
 }
 
 #[derive(Clone, Eq, Hash, PartialEq)]
-pub struct DottedRule<NT, T>
+pub struct DottedRule<N, T>
 where
-    NT: Nonterminal,
+    N: Nonterminal,
     T: Terminal,
 {
-    production: Production<NT, T>,
+    production: Production<N, T>,
     dot_pos: usize,
 }
 
-impl<NT, T> DottedRule<NT, T>
+impl<N, T> DottedRule<N, T>
 where
-    NT: Nonterminal,
+    N: Nonterminal,
     T: Terminal,
 {
-    fn next_symbol(&self) -> Option<Symbol<NT, T>> {
+    fn next_symbol(&self) -> Option<Symbol<N, T>> {
         if self.dot_pos >= self.production.rhs.len() {
             None
         } else {
@@ -113,14 +113,14 @@ where
         self.dot_pos >= self.production.rhs.len()
     }
 
-    pub fn production(&self) -> &Production<NT, T> {
+    pub fn production(&self) -> &Production<N, T> {
         &self.production
     }
 }
 
-impl<NT, T> Display for DottedRule<NT, T>
+impl<N, T> Display for DottedRule<N, T>
 where
-    NT: Nonterminal + Display,
+    N: Nonterminal + Display,
     T: Terminal + Display,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -142,23 +142,23 @@ where
 }
 
 #[derive(Clone, Eq, Hash, PartialEq)]
-pub struct ChartEdge<NT, T>
+pub struct ChartEdge<N, T>
 where
-    NT: Nonterminal,
+    N: Nonterminal,
     T: Terminal,
 {
-    dotted_rule: DottedRule<NT, T>,
+    dotted_rule: DottedRule<N, T>,
     start: usize,
     end: usize,
-    history: Vec<ChartEdge<NT, T>>,
+    history: Vec<ChartEdge<N, T>>,
 }
 
-impl<NT, T> ChartEdge<NT, T>
+impl<N, T> ChartEdge<N, T>
 where
-    NT: Nonterminal,
+    N: Nonterminal,
     T: Terminal,
 {
-    pub fn dotted_rule(&self) -> &DottedRule<NT, T> {
+    pub fn dotted_rule(&self) -> &DottedRule<N, T> {
         &self.dotted_rule
     }
 
@@ -170,43 +170,43 @@ where
         self.end
     }
 
-    pub fn history(&self) -> &Vec<ChartEdge<NT, T>> {
+    pub fn history(&self) -> &Vec<ChartEdge<N, T>> {
         &self.history
     }
 }
 
-pub struct Chart<NT, T>
+pub struct Chart<N, T>
 where
-    NT: Nonterminal,
+    N: Nonterminal,
     T: Terminal,
 {
     /// String to parse
     input_string: Vec<T>,
     /// Maps from nonterminals to its productions
-    productions_by_lhs: HashMap<NT, Vec<Production<NT, T>>>,
+    productions_by_lhs: HashMap<N, Vec<Production<N, T>>>,
     /// All edges in a set for quick member check
-    all_edges: HashSet<ChartEdge<NT, T>>,
+    all_edges: HashSet<ChartEdge<N, T>>,
     /// Edges left to predict/scan/complete
-    to_process: VecDeque<ChartEdge<NT, T>>,
+    to_process: VecDeque<ChartEdge<N, T>>,
 
     /// Complete derivations stored here
-    complete_derivations: Vec<ChartEdge<NT, T>>,
+    complete_derivations: Vec<ChartEdge<N, T>>,
 
     /// Entire chart in order (mainly just for printing it out),
     /// the second item in the pair is the history in the form indices
     /// back into this `Vec`, as this is easier to print in a table.
     /// This will only be populated if trace is true
-    trace_chart: Vec<(ChartEdge<NT, T>, Vec<usize>)>,
+    trace_chart: Vec<(ChartEdge<N, T>, Vec<usize>)>,
     trace: bool,
 }
 
-impl<NT, T> Chart<NT, T>
+impl<N, T> Chart<N, T>
 where
-    NT: Nonterminal,
+    N: Nonterminal,
     T: Terminal,
 {
     /// Create new chart
-    pub fn new(input_string: Vec<T>, productions: Vec<Production<NT, T>>) -> Self {
+    pub fn new(input_string: Vec<T>, productions: Vec<Production<N, T>>) -> Self {
         let mut productions_by_lhs = HashMap::new();
         let mut to_process = VecDeque::new();
         let mut all_edges = HashSet::new();
@@ -220,7 +220,7 @@ where
         }
 
         for production in productions_by_lhs
-            .get(&NT::start())
+            .get(&N::start())
             .expect("No starting productions")
         {
             let edge = ChartEdge {
@@ -248,7 +248,7 @@ where
         self.trace = trace;
     }
 
-    fn add_to_trace_chart(&mut self, edge: &ChartEdge<NT, T>) {
+    fn add_to_trace_chart(&mut self, edge: &ChartEdge<N, T>) {
         if self.trace {
             let history: Vec<usize> = edge
                 .history()
@@ -267,7 +267,7 @@ where
         }
     }
 
-    pub fn trace_chart(&self) -> &Vec<(ChartEdge<NT, T>, Vec<usize>)> {
+    pub fn trace_chart(&self) -> &Vec<(ChartEdge<N, T>, Vec<usize>)> {
         &self.trace_chart
     }
 
@@ -282,7 +282,7 @@ where
     }
 
     /// Processes one edge from to_process. Panics if nothing to do.
-    pub fn process_one(&mut self) -> ChartEdge<NT, T> {
+    pub fn process_one(&mut self) -> ChartEdge<N, T> {
         if let Some(edge) = self.to_process.pop_front() {
             match edge.dotted_rule.next_symbol() {
                 // Predict
@@ -292,7 +292,7 @@ where
                         .get(&nonterminal)
                         .expect("Expected non-terminal to have a production");
 
-                    let new_edges: Vec<ChartEdge<NT, T>> = productions
+                    let new_edges: Vec<ChartEdge<N, T>> = productions
                         .iter()
                         .map(|production| ChartEdge {
                             dotted_rule: production.clone().into_dotted_rule(0),
@@ -321,14 +321,14 @@ where
                 None => {
                     let completed_nonterminal = edge.dotted_rule.production.lhs;
 
-                    if completed_nonterminal == NT::start()
+                    if completed_nonterminal == N::start()
                         && edge.start() == 0
                         && edge.end() == self.input_string.len()
                     {
                         self.complete_derivations.push(edge.clone());
                     }
 
-                    let new_edges: Vec<ChartEdge<NT, T>> = self
+                    let new_edges: Vec<ChartEdge<N, T>> = self
                         .all_edges
                         .iter()
                         .filter_map(|other_edge| {
@@ -361,7 +361,7 @@ where
         }
     }
 
-    fn add_edge(&mut self, new_edge: ChartEdge<NT, T>) {
+    fn add_edge(&mut self, new_edge: ChartEdge<N, T>) {
         if !self.all_edges.contains(&new_edge) {
             self.add_to_trace_chart(&new_edge);
             self.to_process.push_back(new_edge.clone());
@@ -371,14 +371,14 @@ where
 
     fn add_edges<I>(&mut self, new_edges: I)
     where
-        I: IntoIterator<Item = ChartEdge<NT, T>>,
+        I: IntoIterator<Item = ChartEdge<N, T>>,
     {
         for new_edge in new_edges {
             self.add_edge(new_edge);
         }
     }
 
-    pub fn complete_derivations(&self) -> &Vec<ChartEdge<NT, T>> {
+    pub fn complete_derivations(&self) -> &Vec<ChartEdge<N, T>> {
         &self.complete_derivations
     }
 }
