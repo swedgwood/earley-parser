@@ -1,9 +1,11 @@
 mod earley;
+mod tree;
 
 use core::num;
 use std::fmt::Display;
 
 use earley::{Chart, ChartEdge, Nonterminal, Production, Symbol, Terminal};
+use tree::Tree;
 
 type Nt = &'static str;
 type T = &'static str;
@@ -46,93 +48,20 @@ fn parse_simple_prods(prods_text: &'static str) -> Vec<Production<Nt, T>> {
         .collect()
 }
 
-struct Tree {
-    node: Symbol<Nt, T>,
-    children: Vec<Tree>,
-}
-
-impl ToString for Tree {
-    fn to_string(&self) -> String {
-        if self.children.len() > 1 {
-            // Each subtree, but we reverse the rows so its easier to add to the end
-            let mut children_strings: Vec<Vec<String>> = self
-                .children
-                .iter()
-                .map(|t| {
-                    let mut subtree_strings: Vec<String> =
-                        t.to_string().split("\n").map(|s| s.to_owned()).collect();
-                    subtree_strings.reverse();
-                    subtree_strings
-                })
-                .collect();
-            let max_height = children_strings.iter().map(|s| s.len()).max().unwrap_or(0);
-
-            let mut branch_length = 0;
-            let children_strings_len = children_strings.len();
-
-            for (i, child_strings) in children_strings.iter_mut().enumerate() {
-                // This should mean every subtree vec in children_strings is the same length (max_height + 1)
-                for _ in 0..(max_height - child_strings.len() + 1) {
-                    child_strings.push("|".to_owned());
-                }
-
-                let max_subtree_width = child_strings.iter().map(|s| s.len()).max().unwrap_or(0);
-
-                let right_padding = if i == children_strings_len - 1 { 0 } else { 1 };
-
-                if i != children_strings_len - 1 {
-                    branch_length += max_subtree_width + right_padding;
-                }
-
-                for child_string in child_strings.iter_mut() {
-                    child_string.push_str(
-                        &" ".repeat(max_subtree_width - child_string.len() + right_padding),
-                    );
-                }
-            }
-
-            let branch_string = "|".to_owned() + &"_".repeat(branch_length - 1);
-
-            let mut lines: Vec<String> = Vec::new();
-
-            for i in (0..max_height + 1) {
-                let mut line = String::new();
-                for s in children_strings.iter() {
-                    line.push_str(&s[i]);
-                }
-                lines.push(line);
-            }
-
-            lines.push(branch_string);
-            lines.push(self.node.to_string().to_owned());
-
-            lines.reverse();
-
-            lines.join("\n")
-        } else if self.children.len() == 1 {
-            self.node.to_string() + "\n|\n" + &self.children[0].to_string()
-        } else {
-            self.node.to_string()
-        }
-    }
-}
-
-fn derivation_tree(deriv: &ChartEdge<Nt, T>) -> Tree {
-    let mut children: Vec<Tree> = deriv.history().into_iter().map(derivation_tree).collect();
+fn derivation_tree(deriv: &ChartEdge<Nt, T>) -> Tree<Symbol<Nt, T>> {
+    let mut children: Vec<Tree<Symbol<Nt, T>>> =
+        deriv.history().into_iter().map(derivation_tree).collect();
 
     for sym in deriv.dotted_rule().production().rhs() {
         if let Symbol::Terminal(t) = sym {
-            children.push(Tree {
-                node: Symbol::Terminal(t),
-                children: vec![],
-            })
+            children.push(Tree::new(Symbol::Terminal(t), vec![]))
         }
     }
 
-    Tree {
-        node: Symbol::Nonterminal(deriv.dotted_rule().production().lhs()),
+    Tree::new(
+        Symbol::Nonterminal(deriv.dotted_rule().production().lhs()),
         children,
-    }
+    )
 }
 
 fn main() {
