@@ -12,6 +12,7 @@ impl Nonterminal for Nt {
     }
 }
 
+/// This function basically just exists so I can easily write the productions as a big string, see example use in main
 fn parse_simple_prods(prods_text: &'static str) -> Vec<Production<Nt, T>> {
     prods_text
         .split("\n")
