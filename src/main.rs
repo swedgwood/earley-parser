@@ -1,338 +1,213 @@
-/// Symbols (terminals and non-terminals)
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Sym {
-    T(&'static str),
-    Nt(&'static str),
-}
-
-impl Display for Sym {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Sym::T(s) => write!(f, "{}", s),
-            Sym::Nt(s) => write!(f, "{}", s),
-        }
-    }
-}
+mod earley;
 
 use core::num;
 use std::fmt::Display;
 
-use Sym::*;
+use earley::{Chart, ChartEdge, Nonterminal, Production, Symbol, Terminal};
 
-/// Production
-#[derive(Copy, Clone, PartialEq, Eq)]
-struct Prod {
-    lhs: &'static str,
-    rhs: &'static [Sym],
-}
+type Nt = &'static str;
+type T = &'static str;
 
-impl Display for Prod {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} ->", self.lhs)?;
-        for sym in self.rhs {
-            write!(f, " {}", sym)?;
-        }
-        Ok(())
+impl Nonterminal for Nt {
+    fn start() -> Self {
+        "S"
     }
 }
 
-impl Prod {
-    fn new(lhs: &'static str, rhs: &'static [Sym]) -> Self {
-        Self { lhs, rhs }
-    }
-}
+fn parse_simple_prods(prods_text: &'static str) -> Vec<Production<Nt, T>> {
+    prods_text
+        .split("\n")
+        .filter(|s| !s.trim().is_empty())
+        .flat_map(|s| {
+            let (mut lhs, rhses) = s.split_once("->").expect("Failed simple parse (1)");
+            lhs = lhs.trim();
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct DottedRule {
-    prod: Prod,
-    dot_pos: usize,
-}
+            rhses.trim().split("|").map(move |rhs_raw| {
+                let rhs: Vec<Symbol<Nt, T>> = rhs_raw
+                    .trim()
+                    .split(" ")
+                    .map(|sym| {
+                        if sym
+                            .chars()
+                            .nth(0)
+                            .expect("Failed simple parse (2)")
+                            .is_ascii_uppercase()
+                        {
+                            Symbol::Nonterminal(sym)
+                        } else {
+                            Symbol::Terminal(sym)
+                        }
+                    })
+                    .collect();
 
-impl Display for DottedRule {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} ->", self.prod.lhs)?;
-        for (i, sym) in self.prod.rhs.iter().enumerate() {
-            write!(f, "{}{}", if i == self.dot_pos { "•" } else { " " }, sym)?;
-        }
-        if self.dot_pos == self.prod.rhs.len() {
-            write!(f, "•")?;
-        }
-        Ok(())
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct ChartEdge {
-    rule: DottedRule,
-    start: usize,
-    end: usize,
-    hist: Option<usize>,
-}
-
-impl Display for ChartEdge {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{:10} | {:2} | {:2} | {:5}",
-            self.rule,
-            self.start,
-            self.end,
-            if let Some(s) = self.hist {
-                s.to_string()
-            } else {
-                String::new()
-            }
-        )
-    }
-}
-
-fn generate_dotted_rules(productions: &Vec<Prod>) -> Vec<DottedRule> {
-    productions
-        .iter()
-        .flat_map(|prod| {
-            (0..prod.rhs.len() + 1).map(|i| DottedRule {
-                prod: *prod,
-                dot_pos: i,
+                Production::new(lhs, rhs)
             })
         })
         .collect()
 }
 
-fn push_not_dup(chart: &mut Vec<ChartEdge>, edge_to_add: ChartEdge) {
-    let edge_exists = chart.iter().find(|c| **c == edge_to_add);
+struct Tree {
+    node: Symbol<Nt, T>,
+    children: Vec<Tree>,
+}
 
-    if edge_exists.is_none() {
-        chart.push(edge_to_add);
+impl ToString for Tree {
+    fn to_string(&self) -> String {
+        if self.children.len() > 1 {
+            // Each subtree, but we reverse the rows so its easier to add to the end
+            let mut children_strings: Vec<Vec<String>> = self
+                .children
+                .iter()
+                .map(|t| {
+                    let mut subtree_strings: Vec<String> =
+                        t.to_string().split("\n").map(|s| s.to_owned()).collect();
+                    subtree_strings.reverse();
+                    subtree_strings
+                })
+                .collect();
+            let max_height = children_strings.iter().map(|s| s.len()).max().unwrap_or(0);
+
+            let mut branch_length = 0;
+            let children_strings_len = children_strings.len();
+
+            for (i, child_strings) in children_strings.iter_mut().enumerate() {
+                // This should mean every subtree vec in children_strings is the same length (max_height + 1)
+                for _ in 0..(max_height - child_strings.len() + 1) {
+                    child_strings.push("|".to_owned());
+                }
+
+                let max_subtree_width = child_strings.iter().map(|s| s.len()).max().unwrap_or(0);
+
+                let right_padding = if i == children_strings_len - 1 { 0 } else { 1 };
+
+                if i != children_strings_len - 1 {
+                    branch_length += max_subtree_width + right_padding;
+                }
+
+                for child_string in child_strings.iter_mut() {
+                    child_string.push_str(
+                        &" ".repeat(max_subtree_width - child_string.len() + right_padding),
+                    );
+                }
+            }
+
+            let branch_string = "|".to_owned() + &"_".repeat(branch_length - 1);
+
+            let mut lines: Vec<String> = Vec::new();
+
+            for i in (0..max_height + 1) {
+                let mut line = String::new();
+                for s in children_strings.iter() {
+                    line.push_str(&s[i]);
+                }
+                lines.push(line);
+            }
+
+            lines.push(branch_string);
+            lines.push(self.node.to_string().to_owned());
+
+            lines.reverse();
+
+            lines.join("\n")
+        } else if self.children.len() == 1 {
+            self.node.to_string() + "\n|\n" + &self.children[0].to_string()
+        } else {
+            self.node.to_string()
+        }
+    }
+}
+
+fn derivation_tree(deriv: &ChartEdge<Nt, T>) -> Tree {
+    let mut children: Vec<Tree> = deriv.history().into_iter().map(derivation_tree).collect();
+
+    for sym in deriv.dotted_rule().production().rhs() {
+        if let Symbol::Terminal(t) = sym {
+            children.push(Tree {
+                node: Symbol::Terminal(t),
+                children: vec![],
+            })
+        }
+    }
+
+    Tree {
+        node: Symbol::Nonterminal(deriv.dotted_rule().production().lhs()),
+        children,
     }
 }
 
 fn main() {
-    let prod_s = Prod::new("S", &[Nt("NP"), Nt("VP")]);
+    let productions = parse_simple_prods(
+        " 
+        S -> NP VP
+        NP -> N
+        NP -> N PP
+        PP -> P NP
+        VP -> V
+        VP -> V NP
+        VP -> V VP
+        VP -> VP PP
+        N -> can
+        N -> fish
+        N -> rivers
+        N -> they
+        N -> december
+        P -> in
+        V -> can
+        V -> fish
+    ",
+    );
 
-    let productions: Vec<Prod> = vec![
-        // S -> NP VP
-        prod_s,
-        // ==================================================
-        // NP -> N
-        Prod::new("NP", &[Nt("N")]),
-        // NP -> N PP
-        Prod::new("NP", &[Nt("N"), Nt("PP")]),
-        // ==================================================
-        // PP -> P NP
-        Prod::new("PP", &[Nt("P"), Nt("NP")]),
-        // ==================================================
-        // VP -> V
-        Prod::new("VP", &[Nt("V")]),
-        // VP -> V NP
-        Prod::new("VP", &[Nt("V"), Nt("NP")]),
-        // VP -> V VP
-        Prod::new("VP", &[Nt("V"), Nt("VP")]),
-        // VP -> VP PP
-        Prod::new("VP", &[Nt("VP"), Nt("PP")]),
-        // ==================================================
-        // N -> can
-        Prod::new("N", &[T("can")]),
-        // N -> fish
-        Prod::new("N", &[T("fish")]),
-        // N -> rivers
-        Prod::new("N", &[T("rivers")]),
-        // N -> they
-        Prod::new("N", &[T("they")]),
-        // N -> december
-        Prod::new("N", &[T("december")]),
-        // N -> ...
-        // Prod::new("N", &[T("...")]),
-        // ==================================================
-        // P -> in
-        Prod::new("P", &[T("in")]),
-        // P -> ...
-        // Prod::new("N", &[T("...")]),
-        // ==================================================
-        // V -> can
-        Prod::new("V", &[T("can")]),
-        // V -> fish
-        Prod::new("V", &[T("fish")]),
-        // V -> ...
-        // Prod::new("V", vec![T("...")]),
-    ];
+    let input_string = vec!["they", "can", "fish", "in", "rivers", "in", "december"];
+    let input_string_len = input_string.len();
 
-    let dotted_rules = generate_dotted_rules(&productions);
+    let mut chart: Chart<Nt, T> = Chart::new(input_string, productions);
 
-    println!("Productions:");
-    for (i, p) in productions.iter().enumerate() {
-        println!("{}) {}", i, p)
-    }
-
-    println!("");
-    println!("Dotted rules:");
-    for (i, r) in dotted_rules.iter().enumerate() {
-        println!("{}) {}", i, r);
-    }
-
-    let mut chart: Vec<ChartEdge> = Vec::new();
-
-    chart.push(ChartEdge {
-        rule: DottedRule {
-            prod: prod_s,
-            dot_pos: 0,
-        },
-        start: 0,
-        end: 0,
-        hist: None,
-    });
-
-    let mut chart_pos = 0;
-
-    //                             NP      VP
-    //                             N       V      VP
-    //                                            VP      PP
-    //                                            V       P     NP
-    //                                                          N
-
-    let input_string = ["they", "can", "fish", "in", "rivers", "in", "december"];
-    // let input_string = ["they", "can", "fish"];
-
+    let mut chart_ordered: Vec<ChartEdge<Nt, T>> = Vec::new();
+    let mut complete_derivations: Vec<ChartEdge<Nt, T>> = Vec::new();
     let mut num_parses = 0;
+    while chart.more_to_process() {
+        let edge = chart.process_one();
+        chart_ordered.push(edge.clone());
 
-    while chart_pos < chart.len() {
-        let ChartEdge {
-            rule,
-            start,
-            end,
-            hist,
-        } = chart[chart_pos];
-
-        if rule.dot_pos == rule.prod.rhs.len() || !["N", "P", "V"].contains(&rule.prod.lhs) {
-            println!("{:3} | {}", chart_pos, chart[chart_pos]);
-        }
-
-        if start == 0
-            && end == input_string.len()
-            && rule.dot_pos == rule.prod.rhs.len()
-            && rule.prod.lhs == "S"
+        if edge.dotted_rule().production().lhs() == &"S"
+            && edge.dotted_rule().is_complete()
+            && edge.start() == 0
+            && edge.end() == input_string_len
         {
-            println!("Full parse!!! woo!!!");
             num_parses += 1;
+            complete_derivations.push(edge);
         }
-
-        let DottedRule { prod, dot_pos } = rule;
-
-        if dot_pos < prod.rhs.len() {
-            let sym = prod.rhs[dot_pos];
-
-            match sym {
-                T(s) => {
-                    if end >= input_string.len() {
-                        chart_pos += 1;
-                        continue;
-                    }
-                    // If next symbol after dot is a terminal, read it in from the input
-                    let next_token = input_string[end];
-                    if s == next_token {
-                        push_not_dup(
-                            &mut chart,
-                            ChartEdge {
-                                rule: DottedRule {
-                                    prod,
-                                    dot_pos: dot_pos + 1,
-                                },
-                                start: start,
-                                end: end + 1,
-                                hist: None,
-                            },
-                        )
-                    }
-                }
-                Nt(s) => {
-                    // If next symbol after dot is a nonterminal, add edges for productions
-                    for prod in productions.iter() {
-                        if prod.lhs == s {
-                            let edge = chart
-                                .iter()
-                                .enumerate()
-                                .find(|(_, c)| {
-                                    c.rule.prod == *prod
-                                        && c.rule.dot_pos == c.rule.prod.rhs.len()
-                                        && end == c.start
-                                })
-                                .map(|(i, x)| (i, *x));
-
-                            if let Some((i, edge)) = edge {
-                                push_not_dup(
-                                    &mut chart,
-                                    ChartEdge {
-                                        rule: DottedRule {
-                                            prod: rule.prod,
-                                            dot_pos: rule.dot_pos + 1,
-                                        },
-                                        start,
-                                        end: edge.end,
-                                        hist: Some(i),
-                                    },
-                                );
-                            } else {
-                                let edge_to_add = ChartEdge {
-                                    rule: DottedRule {
-                                        prod: *prod,
-                                        dot_pos: 0,
-                                    },
-                                    start: end,
-                                    end,
-                                    hist: None,
-                                };
-                                push_not_dup(&mut chart, edge_to_add);
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            // Dot is fully on the right, i.e. node explored, so need to propagate
-            for ChartEdge {
-                rule:
-                    DottedRule {
-                        prod: prod2,
-                        dot_pos,
-                    },
-                start: s2,
-                end: e2,
-                ..
-            } in chart.clone()
-            // TODO: This clone is costly and definitely not needed
-            {
-                // Check Correct Position
-                if e2 != start {
-                    continue;
-                }
-
-                // Check there dot is not at end
-                if dot_pos >= prod2.rhs.len() {
-                    continue;
-                }
-
-                // Check that symbol after dot is this non-terminal
-                if prod2.rhs[dot_pos] != Nt(prod.lhs) {
-                    continue;
-                }
-
-                // If all checks pass, then advance dot
-                push_not_dup(
-                    &mut chart,
-                    ChartEdge {
-                        rule: DottedRule {
-                            prod: prod2,
-                            dot_pos: dot_pos + 1,
-                        },
-                        start: s2,
-                        end: end,
-                        hist: Some(chart_pos),
-                    },
-                );
-            }
-        }
-
-        chart_pos += 1;
     }
 
-    println!("Num parse: {}", num_parses);
+    for (i, edge) in chart_ordered.iter().enumerate() {
+        let history: String = edge
+            .history()
+            .iter()
+            .map(|e| {
+                for (j, oe) in chart_ordered.iter().enumerate() {
+                    if e == oe {
+                        return j.to_string();
+                    }
+                }
+                return "-1".to_owned();
+            })
+            .collect::<Vec<String>>()
+            .join(",");
+
+        println!(
+            "{:3} | {:15} | {:3},{:3} | {}",
+            i,
+            edge.dotted_rule(),
+            edge.start(),
+            edge.end(),
+            history
+        );
+    }
+
+    for derivation in complete_derivations {
+        println!("{}", derivation_tree(&derivation).to_string());
+        println!();
+    }
+
+    println!("Num parses: {}", num_parses);
 }
