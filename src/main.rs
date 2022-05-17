@@ -1,8 +1,7 @@
 mod earley;
 mod tree;
 
-use earley::{Chart, ChartEdge, Nonterminal, Production, Symbol};
-use tree::Tree;
+use earley::{Chart, Nonterminal, Production, Symbol};
 
 type Nt = &'static str;
 type T = &'static str;
@@ -43,22 +42,6 @@ fn parse_simple_prods(prods_text: &'static str) -> Vec<Production<Nt, T>> {
             })
         })
         .collect()
-}
-
-fn derivation_tree(deriv: &ChartEdge<Nt, T>) -> Tree<Symbol<Nt, T>> {
-    let mut children: Vec<Tree<Symbol<Nt, T>>> =
-        deriv.history().into_iter().map(derivation_tree).collect();
-
-    for sym in deriv.dotted_rule().production().rhs() {
-        if let Symbol::Terminal(t) = sym {
-            children.push(Tree::new(Symbol::Terminal(t), vec![]))
-        }
-    }
-
-    Tree::new(
-        Symbol::Nonterminal(deriv.dotted_rule().production().lhs()),
-        children,
-    )
 }
 
 fn main() {
@@ -108,8 +91,8 @@ fn main() {
         );
     }
 
-    for derivation in chart.complete_derivations() {
-        println!("{}", derivation_tree(&derivation).to_string());
+    for derivation_tree in chart.generate_derivation_trees() {
+        println!("{}", derivation_tree);
         println!();
     }
 

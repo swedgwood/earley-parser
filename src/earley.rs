@@ -1,3 +1,4 @@
+use crate::tree::Tree;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     fmt::Display,
@@ -172,6 +173,25 @@ where
 
     pub fn history(&self) -> &Vec<ChartEdge<N, T>> {
         &self.history
+    }
+
+    pub fn generate_derivation_tree(&self) -> Tree<Symbol<N, T>> {
+        let mut children: Vec<Tree<Symbol<N, T>>> = self
+            .history()
+            .into_iter()
+            .map(Self::generate_derivation_tree)
+            .collect();
+
+        for sym in self.dotted_rule().production().rhs() {
+            if let Symbol::Terminal(t) = sym {
+                children.push(Tree::new(Symbol::Terminal(t.clone()), vec![]))
+            }
+        }
+
+        Tree::new(
+            Symbol::Nonterminal(self.dotted_rule().production().lhs().clone()),
+            children,
+        )
     }
 }
 
@@ -380,5 +400,12 @@ where
 
     pub fn complete_derivations(&self) -> &Vec<ChartEdge<N, T>> {
         &self.complete_derivations
+    }
+
+    pub fn generate_derivation_trees(&self) -> Vec<Tree<Symbol<N, T>>> {
+        self.complete_derivations()
+            .iter()
+            .map(|e| e.generate_derivation_tree())
+            .collect()
     }
 }
