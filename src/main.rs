@@ -1,10 +1,7 @@
 mod earley;
 mod tree;
 
-use core::num;
-use std::fmt::Display;
-
-use earley::{Chart, ChartEdge, Nonterminal, Production, Symbol, Terminal};
+use earley::{Chart, ChartEdge, Nonterminal, Production, Symbol};
 use tree::Tree;
 
 type Nt = &'static str;
@@ -87,42 +84,16 @@ fn main() {
     );
 
     let input_string = vec!["they", "can", "fish", "in", "rivers", "in", "december"];
-    let input_string_len = input_string.len();
 
     let mut chart: Chart<Nt, T> = Chart::new(input_string, productions);
+    chart.set_trace(true);
+    chart.process_all();
 
-    let mut chart_ordered: Vec<ChartEdge<Nt, T>> = Vec::new();
-    let mut complete_derivations: Vec<ChartEdge<Nt, T>> = Vec::new();
-    let mut num_parses = 0;
-    while chart.more_to_process() {
-        let edge = chart.process_one();
-        chart_ordered.push(edge.clone());
+    let num_parses = chart.complete_derivations().len();
 
-        if edge.dotted_rule().production().lhs() == &"S"
-            && edge.dotted_rule().is_complete()
-            && edge.start() == 0
-            && edge.end() == input_string_len
-        {
-            num_parses += 1;
-            complete_derivations.push(edge);
-        }
-    }
+    let chart_ordered = chart.trace_chart();
 
-    for (i, edge) in chart_ordered.iter().enumerate() {
-        let history: String = edge
-            .history()
-            .iter()
-            .map(|e| {
-                for (j, oe) in chart_ordered.iter().enumerate() {
-                    if e == oe {
-                        return j.to_string();
-                    }
-                }
-                return "-1".to_owned();
-            })
-            .collect::<Vec<String>>()
-            .join(",");
-
+    for (i, (edge, history)) in chart_ordered.iter().enumerate() {
         println!(
             "{:3} | {:15} | {:3},{:3} | {}",
             i,
@@ -130,10 +101,14 @@ fn main() {
             edge.start(),
             edge.end(),
             history
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<String>>()
+                .join(", ")
         );
     }
 
-    for derivation in complete_derivations {
+    for derivation in chart.complete_derivations() {
         println!("{}", derivation_tree(&derivation).to_string());
         println!();
     }

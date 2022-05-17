@@ -184,10 +184,20 @@ where
     input_string: Vec<T>,
     /// Maps from nonterminals to its productions
     productions_by_lhs: HashMap<NT, Vec<Production<NT, T>>>,
-    /// Edges
+    /// All edges in a set for quick member check
     all_edges: HashSet<ChartEdge<NT, T>>,
-    /// Edges to predict/scan/complete
+    /// Edges left to predict/scan/complete
     to_process: VecDeque<ChartEdge<NT, T>>,
+
+    /// Complete derivations stored here
+    complete_derivations: Vec<ChartEdge<NT, T>>,
+
+    /// Entire chart in order (mainly just for printing it out),
+    /// the second item in the pair is the history in the form indices
+    /// back into this `Vec`, as this is easier to print in a table.
+    /// This will only be populated if trace is true
+    trace_chart: Vec<(ChartEdge<NT, T>, Vec<usize>)>,
+    trace: bool,
 }
 
 impl<NT, T> Chart<NT, T>
@@ -228,11 +238,41 @@ where
             productions_by_lhs,
             all_edges,
             to_process,
+            trace_chart: Vec::new(),
+            trace: false,
+            complete_derivations: Vec::new(),
         }
     }
 
+    pub fn set_trace(&mut self, trace: bool) {
+        self.trace = trace;
+    }
+
+    fn add_to_trace_chart(&mut self, edge: &ChartEdge<NT, T>) {
+        if self.trace {
+            let history: Vec<usize> = edge
+                .history()
+                .iter()
+                .map(|e| {
+                    for (j, (oe, _)) in self.trace_chart.iter().enumerate() {
+                        if e == oe {
+                            return j;
+                        }
+                    }
+                    return usize::MAX;
+                })
+                .collect();
+
+            self.trace_chart.push((edge.clone(), history));
+        }
+    }
+
+    pub fn trace_chart(&self) -> &Vec<(ChartEdge<NT, T>, Vec<usize>)> {
+        &self.trace_chart
+    }
+
     pub fn process_all(&mut self) {
-        while !self.to_process.is_empty() {
+        while self.more_to_process() {
             self.process_one();
         }
     }
@@ -281,6 +321,13 @@ where
                 None => {
                     let completed_nonterminal = edge.dotted_rule.production.lhs;
 
+                    if completed_nonterminal == NT::start()
+                        && edge.start() == 0
+                        && edge.end() == self.input_string.len()
+                    {
+                        self.complete_derivations.push(edge.clone());
+                    }
+
                     let new_edges: Vec<ChartEdge<NT, T>> = self
                         .all_edges
                         .iter()
@@ -316,6 +363,7 @@ where
 
     fn add_edge(&mut self, new_edge: ChartEdge<NT, T>) {
         if !self.all_edges.contains(&new_edge) {
+            self.add_to_trace_chart(&new_edge);
             self.to_process.push_back(new_edge.clone());
             self.all_edges.insert(new_edge);
         }
@@ -328,5 +376,9 @@ where
         for new_edge in new_edges {
             self.add_edge(new_edge);
         }
+    }
+
+    pub fn complete_derivations(&self) -> &Vec<ChartEdge<NT, T>> {
+        &self.complete_derivations
     }
 }
